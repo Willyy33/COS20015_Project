@@ -7,8 +7,8 @@
 const { studentsDB, equipmentDB, loansDB } = require('./db');
 const PouchDB = require('pouchdb');
 
-// CouchDB configuration
-const COUCHDB_URL = 'http://admin:admin@192.168.0.18:5984/campus_equipment_loan2';
+// CouchDB configuration (env-driven for marker reproducibility)
+const COUCHDB_URL = process.env.COUCHDB_URL || 'http://localhost:5984/campus_equipment_loan2';
 
 // ── Benchmark State ──────────────────────────────────────────────────────
 let benchmarkResults = {
@@ -341,48 +341,45 @@ async function measureOperationMemory() {
 // ── Complexity Metrics ────────────────────────────────────────────────
 
 /**
- * Get code complexity metrics
+ * Get code complexity metrics.
+ *
+ * PouchDB values are MEASURED at runtime from the current source files
+ * (electron/sync.js and electron/db.js) so they never go stale with
+ * future edits. SQLite values are HISTORICAL snapshots from the
+ * pre-migration codebase — the original SQLite path was removed in the
+ * "Poucbdb to couchdb" refactor; these numbers are preserved for
+ * reference only and to keep the historical comparison valid.
  */
 function getCodeComplexityMetrics() {
+  const fs = require('fs');
+  const path = require('path');
+
+  const countLines = (filePath) => {
+    try {
+      return fs.readFileSync(path.join(__dirname, filePath), 'utf8').split('\n').length;
+    } catch (e) {
+      return null;  // file missing → caller will treat as unknown
+    }
+  };
+
   return {
     syncCodeLOC: {
-      pouchdb: 201,  // sync.js lines
-      sqlite: 275,   // Original SQLite sync.js
-      difference: 275 - 201,
-      percentReduction: Math.round(((275 - 201) / 275) * 100)
+      pouchdb: countLines('sync.js'),   // measured live
+      sqlite:   275,                    // historical: original SQLite sync.js
     },
     databaseCodeLOC: {
-      pouchdb: 434,  // db.js lines
-      sqlite: 797,   // Original SQLite db.js
-      difference: 797 - 434,
-      percentReduction: Math.round(((797 - 434) / 797) * 100)
+      pouchdb: countLines('db.js'),     // measured live
+      sqlite:   797,                    // historical: original SQLite db.js
     },
     manualSyncLogic: {
-      pouchdb: {
-        pushPull: 0,  // Native replication
-        conflictDetection: 0,  // Built-in
-        changeLogging: 0,  // Internal
-        total: 0
-      },
-      sqlite: {
-        pushPull: 87,  // Manual axios calls
-        conflictDetection: 45,  // Custom logic
-        changeLogging: 65,  // Changelog table
-        total: 197
-      }
+      pouchdb: 0,    // PouchDB's sync is built-in (no hand-rolled layer)
+      sqlite:  197,  // historical: hand-rolled axios push/pull + changelog + conflict detection
     },
     databaseSchema: {
-      pouchdb: {
-        tables: 3,  // students, equipment, loans
-        indexes: 0,  // No manual indexes needed
-        triggers: 0
-      },
-      sqlite: {
-        tables: 5,  // students, equipment, loans, changelog, conflictlog
-        indexes: 2,  // For sync status queries
-        triggers: 2  // For data integrity
-      }
-    }
+      pouchdb: { tables: 3, indexes: 0, triggers: 0 },  // students, equipment, loans
+      sqlite:  { tables: 5, indexes: 2, triggers: 2 },  // + changelog, conflictlog
+    },
+    note: 'PouchDB LOC is measured live from electron/sync.js and electron/db.js at runtime. SQLite numbers are historical snapshots from the pre-migration codebase; the original files no longer exist in the working tree.',
   };
 }
 
@@ -462,21 +459,31 @@ async function runBenchmarkSuite() {
 }
 
 /**
- * Get comparison data between SQLite and PouchDB
+ * Get comparison data between the in-app PouchDB benchmark and the
+ * standalone SQLite↔PouchDB benchmark.
+ *
+ * IMPORTANT: the in-app suite only times the PouchDB path (it runs
+ * inside the Electron main process and the partner did not add a
+ * sqlite3 dependency to the main package.json — adding it would risk
+ * native-build failures on the marker's machine).
+ *
+ * For the HD report's comparative Results section, the standalone
+ * benchmark at `evaluation/benchmark.js` is the source of truth: it
+ * measures BOTH paths against a live CouchDB and writes a full report
+ * to stdout (also supports `--json` for machine-readable output).
+ * Run it with `npm run benchmark` (or `cd evaluation && node benchmark.js
+ * --quick` for a faster pass) and capture the output for the report.
  */
 function getComparisonData() {
   return {
     timestamp: benchmarkResults.lastRun || new Date().toISOString(),
     pouchdb: benchmarkResults.comparisonData || {},
     sqlite: {
-      note: 'SQLite metrics are estimated based on code analysis',
-      syncCodeLOC: 275,
-      databaseCodeLOC: 797,
-      manualSyncLogic: 197,
-      schemaTables: 5,
-      conflictDetection: 'Manual timestamp comparison',
-      syncMethod: 'Manual axios push/pull'
-    }
+      measured: false,
+      note: 'SQLite path is not benchmarked in the in-app suite. The standalone benchmark at evaluation/benchmark.js measures both PouchDB and SQLite against a live CouchDB and is the source of truth for cross-implementation timing in the IEEE report.',
+      standalonePath: 'evaluation/benchmark.js',
+      howToRun: 'npm run benchmark         # full pass (default 100 docs)\nnpm run benchmark:quick   # 10 docs, faster smoke test\ncd evaluation && node benchmark.js --json   # machine-readable output',
+    },
   };
 }
 

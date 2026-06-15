@@ -7,13 +7,25 @@ const PouchDB = require('pouchdb');
 const path = require('path');
 const { app } = require('electron');
 
-// Database path: store in user's app data directory
-const DB_DIR = app.getPath('userData');
+// Database path: store in user's app data directory.
+// Tests can override via POUCHDB_DIR_OVERRIDE to point at a temp
+// directory and avoid the Electron `app` import.
+let DB_DIR;
+if (process.env.POUCHDB_DIR_OVERRIDE) {
+  DB_DIR = process.env.POUCHDB_DIR_OVERRIDE;
+} else {
+  const { app } = require('electron');
+  DB_DIR = app.getPath('userData');
+}
 
 // Create separate PouchDB instances for each collection
 const studentsDB = new PouchDB(path.join(DB_DIR, 'students'));
 const equipmentDB = new PouchDB(path.join(DB_DIR, 'equipment'));
 const loansDB = new PouchDB(path.join(DB_DIR, 'loans'));
+
+// Separate store for detected conflicts (one record per pending or
+// resolved conflict, used by the Conflict Modal in the renderer).
+const conflictsDB = new PouchDB(path.join(DB_DIR, 'conflicts'));
 
 /**
  * Initialize database - no schema needed for PouchDB
@@ -376,24 +388,121 @@ async function getLastSyncTimestamp() {
 }
 
 /**
- * Log conflict - no-op (PouchDB has built-in conflict tracking)
+ * Log a conflict (writes a record to the conflicts collection).
+ * De-duplicates on (table, documentID) while the conflict is still
+ * pending so repeated sync passes don't flood the store.
  */
-async function logConflict() {
-  // PouchDB handles conflicts internally
+async function logConflict({ table, documentID, localRev, remoteRev, localDoc, remoteDoc }) {
+  // De-dupe: a pending conflict for the same doc is logged only once
+  const existing = await conflictsDB.allDocs({ include_docs: true });
+  const dup = existing.rows.find((row) =>
+    row.doc.status === 'pending' &&
+    row.doc.table === table &&
+    row.doc.documentID === documentID
+  );
+  if (dup) return dup.doc;
+
+  const conflictID = `conflict_${Date.now()}_${documentID}`;
+  const doc = {
+    _id: conflictID,
+    conflictID,
+    table,
+    documentID,
+    localRev,
+    remoteRev,
+    localDoc,
+    remoteDoc,
+    status: 'pending',
+    resolution: null,
+    winnerData: null,
+    timestamp: new Date().toISOString(),
+    resolvedAt: null,
+  };
+  await conflictsDB.put(doc);
+  return doc;
 }
 
 /**
- * Get pending conflicts
+ * Get all pending (unresolved) conflicts, newest first.
  */
 async function getPendingConflicts() {
-  return [];
+  const result = await conflictsDB.allDocs({ include_docs: true });
+  return result.rows
+    .map((row) => row.doc)
+    .filter((doc) => !doc._id.startsWith('_design/') && doc.status === 'pending')
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 }
 
 /**
- * Resolve a conflict
+ * Resolve a conflict by conflictID.
+ * `resolution` is one of: 'local' | 'remote' | 'merge'
+ * `winnerData` is the document to write back to the source table
+ * (may be omitted for resolution='remote' — we re-pull the remote rev).
  */
 async function resolveConflict(conflictID, resolution, winnerData) {
-  return { success: true };
+  const result = await conflictsDB.allDocs({ include_docs: true });
+  const conflictDoc = result.rows.find((row) => row.doc.conflictID === conflictID)?.doc;
+  if (!conflictDoc) throw new Error(`Conflict not found: ${conflictID}`);
+
+  // Apply the winner to the source table
+  if (resolution === 'remote' && conflictDoc.remoteDoc) {
+    await upsertFromRemote(conflictDoc.table, conflictDoc.remoteDoc);
+  } else if ((resolution === 'local' || resolution === 'merge') && winnerData) {
+    await upsertFromRemote(conflictDoc.table, winnerData);
+  }
+
+  await conflictsDB.put({
+    ...conflictDoc,
+    status: 'resolved',
+    resolution,
+    winnerData: winnerData || null,
+    resolvedAt: new Date().toISOString(),
+  });
+
+  return { success: true, conflictID, resolution };
+}
+
+/**
+ * Scan all three source databases for documents with `_conflicts` and
+ * log each conflict to conflictsDB. Safe to call repeatedly; the
+ * logConflict de-dupe logic keeps the store tidy.
+ * Returns the list of newly-detected conflicts in this pass.
+ */
+async function detectConflicts() {
+  const sources = [
+    { table: 'students',  db: studentsDB  },
+    { table: 'equipment', db: equipmentDB },
+    { table: 'loans',     db: loansDB     },
+  ];
+  const detected = [];
+
+  for (const { table, db } of sources) {
+    const result = await db.allDocs({ include_docs: true, conflicts: true });
+    for (const row of result.rows) {
+      const conflicts = row.doc._conflicts;
+      if (!conflicts || conflicts.length === 0) continue;
+
+      for (const conflictingRev of conflicts) {
+        try {
+          const remoteDoc = await db.get(row.doc._id, { rev: conflictingRev });
+          const logged = await logConflict({
+            table,
+            documentID: row.doc._id,
+            localRev: row.doc._rev,
+            remoteRev: conflictingRev,
+            localDoc: row.doc,
+            remoteDoc,
+          });
+          if (logged && !detected.find((d) => d.conflictID === logged.conflictID)) {
+            detected.push({ table, documentID: row.doc._id, conflictID: logged.conflictID });
+          }
+        } catch (err) {
+          // Skip revs that can't be fetched; nothing actionable here
+        }
+      }
+    }
+  }
+  return detected;
 }
 
 /**
@@ -425,10 +534,12 @@ module.exports = {
   logConflict,
   getPendingConflicts,
   resolveConflict,
+  detectConflicts,
   getLastSyncTimestamp,
   markAllChangesSynced,
   // Export DB instances for sync
   studentsDB,
   equipmentDB,
   loansDB,
+  conflictsDB,
 };

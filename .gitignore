@@ -1,2 +1,24 @@
-package-lock.json
-node_modules
+# Dependencies
+node_modules/
+
+# Build artefacts
+dist/
+dist-electron/
+release/
+
+# Local env / secrets — never commit
+.env
+.env.local
+*.log
+
+# Editor / OS junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Misc
+coverage/
+*.tsbuildinfo

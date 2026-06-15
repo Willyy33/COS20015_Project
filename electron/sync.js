@@ -3,16 +3,37 @@
  * Two-way CouchDB sync using PouchDB's built-in replication
  */
 
-const { studentsDB, equipmentDB, loansDB } = require('./db');
+const { studentsDB, equipmentDB, loansDB, detectConflicts } = require('./db');
 
-// CouchDB configuration
-const COUCHDB_URL = 'http://admin:admin@192.168.0.18:5984/campus_equipment_loan2';
+// CouchDB configuration (env-driven for marker reproducibility)
+const COUCHDB_URL = process.env.COUCHDB_URL || 'http://localhost:5984/campus_equipment_loan2';
 
 // Track sync state
 let activeSyncHandlers = [];
 let syncStatus = 'idle';
 let lastSyncTime = null;
 let syncListener = null;
+
+// Debounce helper: a burst of sync 'change' events for the same DB
+// within CONFLICT_SCAN_DEBOUNCE_MS only triggers one detectConflicts().
+let conflictScanTimer = null;
+const CONFLICT_SCAN_DEBOUNCE_MS = 750;
+
+function scheduleConflictScan(dbName) {
+  if (conflictScanTimer) clearTimeout(conflictScanTimer);
+  conflictScanTimer = setTimeout(async () => {
+    conflictScanTimer = null;
+    try {
+      const newConflicts = await detectConflicts();
+      if (newConflicts.length > 0) {
+        console.log(`[SYNC] Detected ${newConflicts.length} new conflict(s) after ${dbName} change:`, newConflicts);
+        emitSyncEvent({ type: 'conflicts', database: dbName, count: newConflicts.length, items: newConflicts });
+      }
+    } catch (err) {
+      console.error('[SYNC] Conflict detection failed:', err);
+    }
+  }, CONFLICT_SCAN_DEBOUNCE_MS);
+}
 
 /**
  * Set a listener for sync events
@@ -46,6 +67,9 @@ function createSyncHandler(localDB, remoteURL, dbName) {
         direction: info.direction,
         docsCount: info.change?.docs?.length || 0
       });
+      // Debounce conflict detection: a burst of changes can produce many
+      // _conflicts arrays; we only need to scan once they're all in.
+      scheduleConflictScan(dbName);
     })
     .on('paused', (info) => {
       console.log(`[SYNC] ${dbName} paused (idle)`);
@@ -111,16 +135,26 @@ async function oneTimeSync() {
     try {
       const remoteDB = new (require('pouchdb'))(`${syncURL}_${name}`);
 
-      // One-time sync
-      const result = await db.sync(remoteDB).on('complete', (info) => {
-        console.log(`[SYNC] ${name} sync complete:`, info);
-        return info;
+      // One-time sync.
+      // db.sync() returns the sync handler, not the result. Wrap in a
+      // Promise that resolves with the `info` payload from the
+      // 'complete' event (and rejects on 'error') so the push/pull
+      // counts below are real numbers, not handler properties.
+      const result = await new Promise((resolve, reject) => {
+        const handler = db.sync(remoteDB);
+        handler.on('complete', (info) => {
+          console.log(`[SYNC] ${name} sync complete:`, info);
+          resolve(info);
+        });
+        handler.on('error', (err) => reject(err));
       });
 
       results[name] = {
         success: true,
         pushed: result.push?.docs_written || 0,
-        pulled: result.pull?.docs_written || 0
+        pulled: result.pull?.docs_written || 0,
+        pushErrors: result.push?.errors || 0,
+        pullErrors: result.pull?.errors || 0,
       };
     } catch (err) {
       console.error(`[SYNC] ${name} sync failed:`, err);
@@ -131,9 +165,22 @@ async function oneTimeSync() {
   lastSyncTime = new Date().toISOString();
   console.log('[SYNC] One-time sync completed:', results);
 
+  // After sync, scan for documents with _conflicts and log them.
+  // The live-sync 'change' handler does the same on a debounce.
+  let newConflicts = [];
+  try {
+    newConflicts = await detectConflicts();
+    if (newConflicts.length > 0) {
+      console.log(`[SYNC] Detected ${newConflicts.length} new conflict(s):`, newConflicts);
+    }
+  } catch (err) {
+    console.error('[SYNC] Conflict detection failed:', err);
+  }
+
   return {
     success: Object.values(results).every(r => r.success),
     results,
+    newConflicts: newConflicts.length,
     message: 'One-time sync completed'
   };
 }

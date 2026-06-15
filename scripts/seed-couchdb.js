@@ -9,8 +9,8 @@ const PouchDB = require('pouchdb');
 const path = require('path');
 const os = require('os');
 
-// CouchDB configuration
-const COUCHDB_URL = 'http://admin:admin@192.168.0.18:5984';
+// CouchDB configuration (env-driven for marker reproducibility)
+const COUCHDB_URL = process.env.COUCHDB_URL || 'http://localhost:5984';
 
 // PouchDB paths (same as main app)
 const DB_DIR = path.join(os.homedir(), 'AppData', 'Roaming', 'equipment-loan-app');
