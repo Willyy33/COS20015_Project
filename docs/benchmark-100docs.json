@@ -1,0 +1,161 @@
+{
+  "timestamp": "2026-06-15T13:58:59.661Z",
+  "config": {
+    "couchdbUrl": "http://admin:admin@192.168.0.12:5984",
+    "dbName": "benchmark_campus",
+    "docCount": 100,
+    "quickMode": false
+  },
+  "sqlite": {
+    "insert": {
+      "timeMs": 1927.6743999999999,
+      "docCount": 250,
+      "docsPerSec": 129.68995178853856
+    },
+    "read": {
+      "timeMs": 2.1023999999997613,
+      "docCount": 250,
+      "docsPerSec": 118911.7199391307
+    },
+    "push": {
+      "timeMs": 6194.856,
+      "docsWritten": 250,
+      "bytesSent": 52215,
+      "docsPerSec": 40.35606315949879
+    },
+    "pull": {
+      "timeMs": 500.9167000000016,
+      "docsRead": 250,
+      "bytesReceived": 63215,
+      "docsPerSec": 499.08497760206285
+    },
+    "memory": {
+      "before": {
+        "rss": 63791104,
+        "heapUsed": 15168464,
+        "heapTotal": 33849344,
+        "external": 3576098
+      },
+      "after": {
+        "rss": 83189760,
+        "heapUsed": 16149360,
+        "heapTotal": 51675136,
+        "external": 3788595
+      },
+      "deltaRss": 19398656,
+      "deltaHeap": 980896
+    }
+  },
+  "pouchdb": {
+    "insert": {
+      "timeMs": 17.635299999999916,
+      "docCount": 250,
+      "docsPerSec": 14176.112683084562
+    },
+    "read": {
+      "timeMs": 6.998500000001513,
+      "docCount": 250,
+      "docsPerSec": 35721.94041579567
+    },
+    "push": {
+      "timeMs": 369.1746000000003,
+      "docsWritten": 250,
+      "bytesSent": 125000,
+      "docsPerSec": 677.1863503068732
+    },
+    "pull": {
+      "timeMs": 135.83020000000033,
+      "docsRead": 250,
+      "bytesReceived": 125000,
+      "docsPerSec": 1840.5332540186157
+    },
+    "memory": {
+      "before": {
+        "rss": 83058688,
+        "heapUsed": 16033888,
+        "heapTotal": 51412992,
+        "external": 3601106
+      },
+      "after": {
+        "rss": 92217344,
+        "heapUsed": 18116224,
+        "heapTotal": 53145600,
+        "external": 4047743
+      },
+      "deltaRss": 9158656,
+      "deltaHeap": 2082336
+    }
+  },
+  "initialPull": {
+    "timeMs": 124.45279999999912,
+    "docsRead": 250,
+    "docsPushed": 0,
+    "finalLocalCount": 250,
+    "docsPerSec": 2008.7936952804741,
+    "memory": {
+      "before": {
+        "rss": 91738112,
+        "heapUsed": 17871192,
+        "heapTotal": 53407744,
+        "external": 3581375
+      },
+      "after": {
+        "rss": 93151232,
+        "heapUsed": 18157336,
+        "heapTotal": 53669888,
+        "external": 4009300
+      },
+      "deltaRss": 1413120,
+      "deltaHeap": 286144
+    }
+  },
+  "comparison": {
+    "insert": {
+      "winner": "pouchdb",
+      "sqliteMs": 1927.6743999999999,
+      "pouchdbMs": 17.635299999999916,
+      "ratio": "0.01x"
+    },
+    "read": {
+      "winner": "sqlite",
+      "sqliteMs": 2.1023999999997613,
+      "pouchdbMs": 6.998500000001513,
+      "ratio": "3.33x"
+    },
+    "push": {
+      "winner": "pouchdb",
+      "sqliteMs": 6194.856,
+      "pouchdbMs": 369.1746000000003,
+      "ratio": "0.06x"
+    },
+    "pull": {
+      "winner": "pouchdb",
+      "sqliteMs": 500.9167000000016,
+      "pouchdbMs": 135.83020000000033,
+      "ratio": "0.27x"
+    },
+    "memory": {
+      "winner": "sqlite",
+      "sqliteHeapDelta": 980896,
+      "pouchdbHeapDelta": 2082336
+    },
+    "codeComplexity": {
+      "syncCodeLOC": {
+        "sqlite": 275,
+        "pouchdb": 201
+      },
+      "dbCodeLOC": {
+        "sqlite": 797,
+        "pouchdb": 434
+      },
+      "manualSyncLogic": {
+        "sqlite": 197,
+        "pouchdb": 0
+      },
+      "schemaTables": {
+        "sqlite": 5,
+        "pouchdb": 3
+      }
+    }
+  }
+}
