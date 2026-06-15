@@ -1,143 +1,143 @@
 {
-  "timestamp": "2026-06-13T16:25:21.542Z",
+  "timestamp": "2026-06-15T13:48:52.502Z",
   "config": {
-    "couchdbUrl": "http://localhost:5984",
-    "dbName": "benchmark_test",
+    "couchdbUrl": "http://admin:admin@192.168.0.12:5984",
+    "dbName": "benchmark_campus",
     "docCount": 1000,
     "quickMode": false
   },
   "sqlite": {
     "insert": {
-      "timeMs": 3916.0589,
-      "docCount": 1000,
-      "docsPerSec": 255.35877409811175
+      "timeMs": 9191.695099999999,
+      "docCount": 2500,
+      "docsPerSec": 271.98465275463724
     },
     "read": {
-      "timeMs": 8.735199999999168,
-      "docCount": 1000,
-      "docsPerSec": 114479.34792564512
+      "timeMs": 5.423300000000381,
+      "docCount": 2500,
+      "docsPerSec": 460973.94575255364
     },
     "push": {
-      "timeMs": 11148.859100000001,
-      "docsWritten": 1000,
-      "bytesSent": 274426,
-      "docsPerSec": 89.69527653282478
+      "timeMs": 53567.06049999999,
+      "docsWritten": 2500,
+      "bytesSent": 634185,
+      "docsPerSec": 46.67047205250324
     },
     "pull": {
-      "timeMs": 5773.815500000001,
-      "docsRead": 1000,
-      "bytesReceived": 318426,
-      "docsPerSec": 173.19569702218575
+      "timeMs": 4793.841899999999,
+      "docsRead": 2500,
+      "bytesReceived": 634185,
+      "docsPerSec": 521.5023883036276
     },
     "memory": {
       "before": {
-        "rss": 76435456,
-        "heapUsed": 19957784,
-        "heapTotal": 32636928,
-        "external": 3554515
+        "rss": 64069632,
+        "heapUsed": 15245288,
+        "heapTotal": 33587200,
+        "external": 3575845
       },
       "after": {
-        "rss": 73977856,
-        "heapUsed": 19295032,
-        "heapTotal": 21917696,
-        "external": 3988415
+        "rss": 99586048,
+        "heapUsed": 16644272,
+        "heapTotal": 56131584,
+        "external": 4900775
       },
-      "deltaRss": -2457600,
-      "deltaHeap": -662752
+      "deltaRss": 35516416,
+      "deltaHeap": 1398984
     }
   },
   "pouchdb": {
     "insert": {
-      "timeMs": 79.45310000000245,
-      "docCount": 1000,
-      "docsPerSec": 12586.041325007698
+      "timeMs": 64.64059999999881,
+      "docCount": 2500,
+      "docsPerSec": 38675.383582455084
     },
     "read": {
-      "timeMs": 76.96059999999852,
-      "docCount": 1000,
-      "docsPerSec": 12993.661691826977
+      "timeMs": 39.524499999999534,
+      "docCount": 2500,
+      "docsPerSec": 63251.90704499815
     },
     "push": {
-      "timeMs": 522.5884000000005,
-      "docsWritten": 1000,
-      "bytesSent": 500000,
-      "docsPerSec": 1913.5518507490772
+      "timeMs": 2179.037000000011,
+      "docsWritten": 2500,
+      "bytesSent": 1250000,
+      "docsPerSec": 1147.295800851471
     },
     "pull": {
-      "timeMs": 225.41869999999835,
-      "docsRead": 0,
-      "bytesReceived": 0,
-      "docsPerSec": 0
+      "timeMs": 696.3672999999981,
+      "docsRead": 2500,
+      "bytesReceived": 1250000,
+      "docsPerSec": 3590.0594413321924
     },
     "memory": {
       "before": {
-        "rss": 73330688,
-        "heapUsed": 19314936,
-        "heapTotal": 21917696,
-        "external": 3988415
+        "rss": 98676736,
+        "heapUsed": 15440872,
+        "heapTotal": 51675136,
+        "external": 3771660
       },
       "after": {
-        "rss": 93876224,
-        "heapUsed": 27282072,
-        "heapTotal": 57212928,
-        "external": 3888867
+        "rss": 111865856,
+        "heapUsed": 18383576,
+        "heapTotal": 57864192,
+        "external": 4264426
       },
-      "deltaRss": 20545536,
-      "deltaHeap": 7967136
+      "deltaRss": 13189120,
+      "deltaHeap": 2942704
     }
   },
   "initialPull": {
-    "timeMs": 356.48409999999785,
-    "docsRead": 1000,
+    "timeMs": 681.4388000000035,
+    "docsRead": 2500,
     "docsPushed": 0,
-    "finalLocalCount": 1000,
-    "docsPerSec": 2805.1741999152446,
+    "finalLocalCount": 2500,
+    "docsPerSec": 3668.708033648784,
     "memory": {
       "before": {
-        "rss": 92823552,
-        "heapUsed": 27337880,
-        "heapTotal": 57212928,
-        "external": 3888867
+        "rss": 110018560,
+        "heapUsed": 17212568,
+        "heapTotal": 54456320,
+        "external": 3577236
       },
       "after": {
-        "rss": 105988096,
-        "heapUsed": 33035128,
-        "heapTotal": 58261504,
-        "external": 3918667
+        "rss": 111861760,
+        "heapUsed": 17963160,
+        "heapTotal": 55767040,
+        "external": 3650497
       },
-      "deltaRss": 13164544,
-      "deltaHeap": 5697248
+      "deltaRss": 1843200,
+      "deltaHeap": 750592
     }
   },
   "comparison": {
     "insert": {
       "winner": "pouchdb",
-      "sqliteMs": 3916.0589,
-      "pouchdbMs": 79.45310000000245,
-      "ratio": "0.02x"
+      "sqliteMs": 9191.695099999999,
+      "pouchdbMs": 64.64059999999881,
+      "ratio": "0.01x"
     },
     "read": {
       "winner": "sqlite",
-      "sqliteMs": 8.735199999999168,
-      "pouchdbMs": 76.96059999999852,
-      "ratio": "8.81x"
+      "sqliteMs": 5.423300000000381,
+      "pouchdbMs": 39.524499999999534,
+      "ratio": "7.29x"
     },
     "push": {
       "winner": "pouchdb",
-      "sqliteMs": 11148.859100000001,
-      "pouchdbMs": 522.5884000000005,
-      "ratio": "0.05x"
+      "sqliteMs": 53567.06049999999,
+      "pouchdbMs": 2179.037000000011,
+      "ratio": "0.04x"
     },
     "pull": {
       "winner": "pouchdb",
-      "sqliteMs": 5773.815500000001,
-      "pouchdbMs": 225.41869999999835,
-      "ratio": "0.04x"
+      "sqliteMs": 4793.841899999999,
+      "pouchdbMs": 696.3672999999981,
+      "ratio": "0.15x"
     },
     "memory": {
       "winner": "sqlite",
-      "sqliteHeapDelta": -662752,
-      "pouchdbHeapDelta": 7967136
+      "sqliteHeapDelta": 1398984,
+      "pouchdbHeapDelta": 2942704
     },
     "codeComplexity": {
       "syncCodeLOC": {

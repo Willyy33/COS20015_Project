@@ -13,12 +13,14 @@
     "seed:couchdb": "node scripts/seed-couchdb.js",
     "benchmark": "cd evaluation && npm run benchmark",
     "benchmark:quick": "cd evaluation && npm run benchmark:quick",
-    "test": "node --test test/conflict.test.js"
+    "test": "node --test test/conflict.test.js test/sqlite-benchmark.test.js",
+    "test:sqlite": "node --test test/sqlite-benchmark.test.js"
   },
   "dependencies": {
     "pouchdb": "^9.0.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",

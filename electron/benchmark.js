@@ -25,6 +25,10 @@ let benchmarkResults = {
  * Get memory usage statistics
  */
 function getMemoryUsage() {
+  // Force GC if available for stable measurements
+  if (typeof global.gc === 'function') {
+    global.gc();
+  }
   const mem = process.memoryUsage();
   return {
     rss: mem.rss / 1024 / 1024,          // RSS in MB
@@ -149,12 +153,21 @@ async function benchmarkOneTimeSync() {
       });
     }, `${name}_push`);
 
-    // Measure pull sync
+    // Measure pull sync into a fresh local DB.
+    // Pulling into the same local DB that just pushed would report 0
+    // new docs because PouchDB already knows the remote revisions.
     const pullResult = await measureTime(async () => {
+      const freshDB = new PouchDB(`_bench_pull_${name}_${Date.now()}`);
       return new Promise((resolve, reject) => {
-        const syncHandler = remoteDB.sync(db);
-        syncHandler.on('complete', (info) => resolve(info));
-        syncHandler.on('error', (err) => reject(err));
+        const syncHandler = remoteDB.sync(freshDB);
+        syncHandler.on('complete', async (info) => {
+          await freshDB.destroy();
+          resolve(info);
+        });
+        syncHandler.on('error', async (err) => {
+          await freshDB.destroy().catch(() => {});
+          reject(err);
+        });
       });
     }, `${name}_pull`);
 

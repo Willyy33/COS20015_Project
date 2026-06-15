@@ -6,8 +6,9 @@
  * using campus equipment loan data (students, equipment, loans).
  *
  * Usage:
- *   node benchmark.js              # Full benchmark
- *   node benchmark.js --quick      # Quick benchmark (smaller dataset)
+ *   node benchmark.js              # Full benchmark (100 docs)
+ *   node benchmark.js --quick      # Quick benchmark (10 docs)
+ *   node benchmark.js --count 500  # Custom doc count per collection
  *   node benchmark.js --verbose    # Verbose output
  *   node benchmark.js --json       # Output as JSON
  *
@@ -36,7 +37,13 @@ const QUICK_MODE = args.includes('--quick');
 const VERBOSE = args.includes('--verbose');
 const JSON_OUTPUT = args.includes('--json');
 
-const TEST_DOC_COUNT = QUICK_MODE ? 10 : DOC_COUNT;
+function getArg(name) {
+  const idx = args.indexOf(name);
+  return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : null;
+}
+
+const CLI_COUNT = getArg('--count');
+const TEST_DOC_COUNT = QUICK_MODE ? 10 : (CLI_COUNT ? parseInt(CLI_COUNT) : DOC_COUNT);
 
 // ── Utility Functions ──────────────────────────────────────────────────
 
