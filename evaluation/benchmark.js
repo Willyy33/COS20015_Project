@@ -1,8 +1,9 @@
-#!/usr/bin/env node
+
 
 /**
  * benchmark.js
  * Standalone evaluation script for SQLite↔CouchDB vs PouchDB↔CouchDB
+ * using campus equipment loan data (students, equipment, loans).
  *
  * Usage:
  *   node benchmark.js              # Full benchmark
@@ -12,8 +13,8 @@
  *
  * Environment variables:
  *   COUCHDB_URL  - CouchDB URL (default: http://localhost:5984)
- *   DB_NAME      - Database name prefix (default: benchmark_test)
- *   DOC_COUNT    - Number of documents to test with (default: 100)
+ *   DB_NAME      - Database name prefix (default: benchmark_campus)
+ *   DOC_COUNT    - Number of documents per collection (default: 100)
  */
 
 const PouchDB = require('pouchdb');
@@ -24,12 +25,10 @@ const os = require('os');
 const fs = require('fs');
 
 // ── Configuration ──────────────────────────────────────────────────────
-// Defaults to a local CouchDB; override with the COUCHDB_URL env var
-// (e.g. http://admin:admin@192.168.0.18:5984 for a LAN instance).
-const COUCHDB_URL = process.env.COUCHDB_URL || 'http://localhost:5984';
-const DB_NAME = process.env.DB_NAME || 'benchmark_test';
+const COUCHDB_URL = process.env.COUCHDB_URL || 'http://admin:admin@192.168.0.12:5984';
+const DB_NAME = process.env.DB_NAME || 'benchmark_campus';
 const DOC_COUNT = parseInt(process.env.DOC_COUNT) || 100;
-const SQLITE_DB_PATH = path.join(os.tmpdir(), `benchmark_${Date.now()}.db`);
+const SQLITE_DB_PATH = path.join(os.tmpdir(), `benchmark_campus_${Date.now()}.db`);
 
 // Parse CLI args
 const args = process.argv.slice(2);
@@ -80,25 +79,141 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ── Test Data Generator ────────────────────────────────────────────────
+/**
+ * Force garbage collection if --expose-gc is available.
+ * Run Node with `node --expose-gc benchmark.js` for stable memory metrics.
+ */
+function forceGC() {
+  if (typeof global.gc === 'function') {
+    global.gc();
+  }
+}
 
-function generateTestDocuments(count) {
-  const docs = [];
+// ── Campus Equipment Loan Data Generators ──────────────────────────────
+
+const FIRST_NAMES = [
+  'William', 'John', 'Sarah', 'Emily', 'Raj', 'Priya', 'Wei', 'Maria',
+  'Ahmed', 'Chloe', 'David', 'Sophie', 'James', 'Yuki', 'Carlos',
+  'Anna', 'Michael', 'Fatima', 'Daniel', 'Olivia', 'Ethan', 'Mia',
+  'Alexander', 'Zara', 'Benjamin', 'Nadia', 'Lucas', 'Aisha', 'Henry', 'Lea'
+];
+
+const LAST_NAMES = [
+  'Yong', 'Tan', 'Lee', 'Chen', 'Kumar', 'Patel', 'Wang', 'Garcia',
+  'Ali', 'Wilson', 'Smith', 'Brown', 'Taylor', 'Tanaka', 'Rodriguez',
+  'Nguyen', 'Johnson', 'Mohammed', 'Williams', 'Jones', 'Kim', 'Park',
+  'Anderson', 'Hassan', 'Thomas', 'Ibrahim', 'Martin', 'Singh', 'White', 'Lam'
+];
+
+const EQUIPMENT_CATALOG = [
+  { name: 'Dell Latitude 5430', category: 'Laptop' },
+  { name: 'Lenovo ThinkPad X1 Carbon', category: 'Laptop' },
+  { name: 'MacBook Air M2', category: 'Laptop' },
+  { name: 'HP EliteBook 840', category: 'Laptop' },
+  { name: 'Canon EOS R50', category: 'Camera' },
+  { name: 'Sony Alpha A6400', category: 'Camera' },
+  { name: 'Nikon D5600', category: 'Camera' },
+  { name: 'GoPro Hero 12', category: 'Camera' },
+  { name: 'Arduino Uno R3', category: 'Microcontroller' },
+  { name: 'Raspberry Pi 5', category: 'Microcontroller' },
+  { name: 'ESP32 DevKit', category: 'Microcontroller' },
+  { name: 'STM32 Nucleo Board', category: 'Microcontroller' },
+  { name: 'Epson Projector X500', category: 'Projector' },
+  { name: 'BenQ MW560', category: 'Projector' },
+  { name: 'Epson EB-W52', category: 'Projector' },
+  { name: 'Sony WH-1000XM5', category: 'Headphones' },
+  { name: 'AirPods Max', category: 'Headphones' },
+  { name: 'Jabra Evolve2 75', category: 'Headphones' },
+  { name: 'iPad Air M2', category: 'Tablet' },
+  { name: 'Samsung Galaxy Tab S9', category: 'Tablet' },
+  { name: 'Microsoft Surface Pro 9', category: 'Tablet' },
+  { name: 'Logitech C920 Webcam', category: 'Accessory' },
+  { name: 'USB-C Hub Adapter', category: 'Accessory' },
+  { name: 'Wireless Mouse', category: 'Accessory' },
+  { name: 'Portable Charger 20000mAh', category: 'Accessory' },
+  { name: 'HDMI Cable 2m', category: 'Accessory' },
+  { name: 'Laptop Stand', category: 'Accessory' },
+  { name: 'Mechanical Keyboard', category: 'Accessory' },
+  { name: 'Wacom Intuos Tablet', category: 'Accessory' },
+  { name: 'SanDisk 128GB USB Drive', category: 'Accessory' }
+];
+
+const CATEGORIES = ['Laptop', 'Camera', 'Microcontroller', 'Projector', 'Headphones', 'Tablet', 'Accessory'];
+const PHONE_PREFIXES = ['012', '011', '019', '016', '018', '017', '013', '014', '015'];
+
+function pickRandom(arr, seed) {
+  return arr[seed % arr.length];
+}
+
+function generatePhone(seed) {
+  const prefix = PHONE_PREFIXES[seed % PHONE_PREFIXES.length];
+  const suffix = String(1000000 + (seed * 7919) % 9000000);
+  return prefix + suffix;
+}
+
+function generateStudents(count) {
+  const students = [];
   for (let i = 1; i <= count; i++) {
-    docs.push({
-      _id: `doc_${String(i).padStart(6, '0')}`,
-      testID: `doc_${String(i).padStart(6, '0')}`,
-      name: `Test Document ${i}`,
-      category: ['Laptop', 'Camera', 'Projector', 'Tablet', 'Accessory'][i % 5],
-      available: i % 3 !== 0,
-      metadata: {
-        createdBy: `user_${i % 10}`,
-        createdAt: new Date().toISOString(),
-        version: 1
-      }
+    const firstName = pickRandom(FIRST_NAMES, i);
+    const lastName = pickRandom(LAST_NAMES, i);
+    const studentID = `S${String(i).padStart(4, '0')}`;
+    students.push({
+      _id: studentID,
+      studentID,
+      firstName,
+      lastName,
+      phone: generatePhone(i),
+      email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@swinburne.edu.my`
     });
   }
-  return docs;
+  return students;
+}
+
+function generateEquipment(count) {
+  const equipment = [];
+  for (let i = 1; i <= count; i++) {
+    const catalogItem = EQUIPMENT_CATALOG[(i - 1) % EQUIPMENT_CATALOG.length];
+    const equipmentID = `E${String(i).padStart(4, '0')}`;
+    equipment.push({
+      _id: equipmentID,
+      equipmentID,
+      name: catalogItem.name + (i > EQUIPMENT_CATALOG.length ? ` #${Math.ceil(i / EQUIPMENT_CATALOG.length)}` : ''),
+      category: catalogItem.category,
+      available: true
+    });
+  }
+  return equipment;
+}
+
+function generateLoans(students, equipment, count) {
+  const loans = [];
+  const borrowDates = [
+    '2025-02-10', '2025-03-05', '2025-04-12', '2025-05-20', '2025-06-01',
+    '2025-07-15', '2025-08-22', '2025-09-03', '2025-10-11', '2025-11-18'
+  ];
+  const returnDates = [
+    null, '2025-02-17', '2025-03-12', '2025-04-19', '2025-05-27',
+    '2025-06-08', null, '2025-07-22', '2025-08-29', '2025-09-10'
+  ];
+
+  for (let i = 1; i <= count; i++) {
+    const student = students[(i - 1) % students.length];
+    const equip = equipment[(i - 1) % equipment.length];
+    const loanID = `L${String(i).padStart(4, '0')}`;
+    const isReturned = i % 3 !== 0;
+    loans.push({
+      _id: `loan_${loanID}`,
+      loanID,
+      studentID: student.studentID,
+      equipmentID: equip.equipmentID,
+      borrowDate: borrowDates[(i - 1) % borrowDates.length],
+      returnDate: isReturned ? returnDates[(i - 1) % returnDates.length] : null,
+      status: isReturned ? 'Returned' : 'Borrowed',
+      synced: false,
+      type: 'loan'
+    });
+  }
+  return loans;
 }
 
 // ── SQLite Benchmark ───────────────────────────────────────────────────
@@ -118,48 +233,69 @@ class SQLiteBenchmark {
     });
   }
 
-  async createTable() {
+  async createTables() {
     return new Promise((resolve, reject) => {
-      this.db.run(`
-        CREATE TABLE IF NOT EXISTS benchmark_docs (
-          _id TEXT PRIMARY KEY,
-          testID TEXT NOT NULL,
-          name TEXT NOT NULL,
-          category TEXT,
-          available INTEGER,
-          metadata TEXT,
-          synced INTEGER DEFAULT 0,
-          lastModified TEXT
-        )
-      `, (err) => {
-        if (err) reject(err);
-        else resolve();
+      this.db.serialize(() => {
+        this.db.run('PRAGMA foreign_keys = ON');
+        this.db.run(`
+          CREATE TABLE IF NOT EXISTS students (
+            _id TEXT PRIMARY KEY,
+            studentID TEXT NOT NULL UNIQUE,
+            firstName TEXT NOT NULL,
+            lastName TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            synced INTEGER DEFAULT 0,
+            lastModified TEXT
+          )
+        `);
+        this.db.run(`
+          CREATE TABLE IF NOT EXISTS equipment (
+            _id TEXT PRIMARY KEY,
+            equipmentID TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            category TEXT,
+            available INTEGER DEFAULT 1,
+            synced INTEGER DEFAULT 0,
+            lastModified TEXT
+          )
+        `);
+        this.db.run(`
+          CREATE TABLE IF NOT EXISTS loans (
+            _id TEXT PRIMARY KEY,
+            loanID TEXT NOT NULL,
+            studentID TEXT NOT NULL,
+            equipmentID TEXT NOT NULL,
+            borrowDate TEXT,
+            returnDate TEXT,
+            status TEXT DEFAULT 'Borrowed',
+            synced INTEGER DEFAULT 0,
+            type TEXT DEFAULT 'loan',
+            lastModified TEXT,
+            FOREIGN KEY (studentID) REFERENCES students(studentID),
+            FOREIGN KEY (equipmentID) REFERENCES equipment(equipmentID)
+          )
+        `, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
       });
     });
   }
 
-  async insertDocuments(docs) {
+  async insertStudents(students) {
     return new Promise((resolve, reject) => {
       const stmt = this.db.prepare(`
-        INSERT OR REPLACE INTO benchmark_docs 
-        (_id, testID, name, category, available, metadata, synced, lastModified)
+        INSERT OR REPLACE INTO students
+        (_id, studentID, firstName, lastName, phone, email, synced, lastModified)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
-
       this.db.serialize(() => {
         this.db.run('BEGIN TRANSACTION');
-        docs.forEach(doc => {
-          stmt.run(
-            doc._id,
-            doc.testID,
-            doc.name,
-            doc.category,
-            doc.available ? 1 : 0,
-            JSON.stringify(doc.metadata),
-            0,
-            new Date().toISOString()
-          );
-        });
+        const now = new Date().toISOString();
+        for (const s of students) {
+          stmt.run(s._id, s.studentID, s.firstName, s.lastName, s.phone, s.email, 0, now);
+        }
         this.db.run('COMMIT', (err) => {
           stmt.finalize();
           if (err) reject(err);
@@ -169,47 +305,90 @@ class SQLiteBenchmark {
     });
   }
 
-  async getDocument(id) {
+  async insertEquipment(equipment) {
     return new Promise((resolve, reject) => {
-      this.db.get(
-        'SELECT * FROM benchmark_docs WHERE _id = ?',
-        [id],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
+      const stmt = this.db.prepare(`
+        INSERT OR REPLACE INTO equipment
+        (_id, equipmentID, name, category, available, synced, lastModified)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      this.db.serialize(() => {
+        this.db.run('BEGIN TRANSACTION');
+        const now = new Date().toISOString();
+        for (const e of equipment) {
+          stmt.run(e._id, e.equipmentID, e.name, e.category, e.available ? 1 : 0, 0, now);
         }
-      );
+        this.db.run('COMMIT', (err) => {
+          stmt.finalize();
+          if (err) reject(err);
+          else resolve();
+        });
+      });
     });
   }
 
-  async getAllDocuments() {
+  async insertLoans(loans) {
     return new Promise((resolve, reject) => {
-      this.db.all(
-        'SELECT * FROM benchmark_docs',
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
+      const stmt = this.db.prepare(`
+        INSERT OR REPLACE INTO loans
+        (_id, loanID, studentID, equipmentID, borrowDate, returnDate, status, synced, type, lastModified)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      this.db.serialize(() => {
+        this.db.run('BEGIN TRANSACTION');
+        const now = new Date().toISOString();
+        for (const l of loans) {
+          stmt.run(l._id, l.loanID, l.studentID, l.equipmentID, l.borrowDate, l.returnDate, l.status, 0, l.type, now);
         }
-      );
+        this.db.run('COMMIT', (err) => {
+          stmt.finalize();
+          if (err) reject(err);
+          else resolve();
+        });
+      });
     });
   }
 
-  async getUnsyncedDocuments() {
+  async getAllStudents() {
     return new Promise((resolve, reject) => {
-      this.db.all(
-        'SELECT * FROM benchmark_docs WHERE synced = 0',
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
-      );
+      this.db.all('SELECT * FROM students', (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
     });
   }
 
-  async markSynced(id) {
+  async getAllEquipment() {
+    return new Promise((resolve, reject) => {
+      this.db.all('SELECT * FROM equipment', (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  async getAllLoans() {
+    return new Promise((resolve, reject) => {
+      this.db.all('SELECT * FROM loans', (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  async getUnsyncedFromTable(tableName) {
+    return new Promise((resolve, reject) => {
+      this.db.all(`SELECT * FROM ${tableName} WHERE synced = 0`, (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+  }
+
+  async markSynced(tableName, id) {
     return new Promise((resolve, reject) => {
       this.db.run(
-        'UPDATE benchmark_docs SET synced = 1 WHERE _id = ?',
+        `UPDATE ${tableName} SET synced = 1 WHERE _id = ?`,
         [id],
         (err) => {
           if (err) reject(err);
@@ -219,26 +398,13 @@ class SQLiteBenchmark {
     });
   }
 
-  async markAllSynced() {
-    return new Promise((resolve, reject) => {
-      this.db.run(
-        'UPDATE benchmark_docs SET synced = 1 WHERE synced = 0',
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
-  }
-
-  async pushToCouchDB(remoteURL) {
-    const unsyncedDocs = await this.getUnsyncedDocuments();
+  async pushTableToCouchDB(tableName, remoteURL) {
+    const unsyncedDocs = await this.getUnsyncedFromTable(tableName);
     let pushed = 0;
     let bytesSent = 0;
 
     for (const doc of unsyncedDocs) {
       try {
-        // Get existing remote doc
         let existingRev = null;
         try {
           const existing = await axios.get(`${remoteURL}/${doc._id}`);
@@ -247,16 +413,11 @@ class SQLiteBenchmark {
           // Doc doesn't exist yet
         }
 
-        const couchDoc = {
-          _id: doc._id,
-          testID: doc.testID,
-          name: doc.name,
-          category: doc.category,
-          available: doc.available === 1,
-          metadata: JSON.parse(doc.metadata || '{}'),
-          localTimestamp: doc.lastModified,
-          pushedAt: new Date().toISOString()
-        };
+        const couchDoc = { ...doc };
+        delete couchDoc.synced;
+        delete couchDoc.lastModified;
+        couchDoc.localTimestamp = doc.lastModified;
+        couchDoc.pushedAt = new Date().toISOString();
 
         if (existingRev) {
           couchDoc._rev = existingRev;
@@ -266,17 +427,40 @@ class SQLiteBenchmark {
         bytesSent += Buffer.byteLength(payload);
 
         await axios.put(`${remoteURL}/${doc._id}`, couchDoc);
-        await this.markSynced(doc._id);
+        await this.markSynced(tableName, doc._id);
         pushed++;
       } catch (err) {
-        if (VERBOSE) log(`Failed to push ${doc._id}: ${err.message}`, 'error');
+        if (VERBOSE) log(`Failed to push ${tableName}/${doc._id}: ${err.message}`, 'error');
       }
     }
 
     return { pushed, bytesSent };
   }
 
-  async pullFromCouchDB(remoteURL) {
+  async pushToCouchDB(remoteBase) {
+    const tables = ['students', 'equipment', 'loans'];
+    let totalPushed = 0;
+    let totalBytes = 0;
+
+    for (const table of tables) {
+      const result = await this.pushTableToCouchDB(table, `${remoteBase}_${table}`);
+      totalPushed += result.pushed;
+      totalBytes += result.bytesSent;
+    }
+
+    return { pushed: totalPushed, bytesSent: totalBytes };
+  }
+
+  async pullTableFromCouchDB(tableName, remoteURL) {
+    const TABLE_COLUMNS = {
+      students: ['_id', 'studentID', 'firstName', 'lastName', 'phone', 'email'],
+      equipment: ['_id', 'equipmentID', 'name', 'category', 'available'],
+      loans: ['_id', 'loanID', 'studentID', 'equipmentID', 'borrowDate', 'returnDate', 'status', 'type']
+    };
+
+    const columns = TABLE_COLUMNS[tableName];
+    if (!columns) throw new Error(`Unknown table: ${tableName}`);
+
     try {
       const response = await axios.get(`${remoteURL}/_all_docs?include_docs=true`);
       const remoteDocs = response.data.rows.filter(r => !r.id.startsWith('_design/'));
@@ -288,19 +472,17 @@ class SQLiteBenchmark {
         bytesReceived += Buffer.byteLength(JSON.stringify(doc));
 
         await new Promise((resolve, reject) => {
+          const filteredCols = columns.filter(c => doc[c] !== undefined);
+          const placeholders = filteredCols.map(() => '?').join(', ');
+          const values = filteredCols.map(k => {
+            const v = doc[k];
+            return typeof v === 'boolean' ? (v ? 1 : 0) : v;
+          });
+
           this.db.run(
-            `INSERT OR REPLACE INTO benchmark_docs 
-             (_id, testID, name, category, available, metadata, synced, lastModified)
-             VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-            [
-              doc._id,
-              doc.testID || doc._id,
-              doc.name,
-              doc.category,
-              doc.available ? 1 : 0,
-              JSON.stringify(doc.metadata || {}),
-              doc.pushedAt || new Date().toISOString()
-            ],
+            `INSERT OR REPLACE INTO ${tableName} (${filteredCols.join(', ')}, synced, lastModified)
+             VALUES (${placeholders}, 1, ?)`,
+            [...values, new Date().toISOString()],
             (err) => {
               if (err) reject(err);
               else resolve();
@@ -312,8 +494,22 @@ class SQLiteBenchmark {
 
       return { pulled, bytesReceived };
     } catch (err) {
-      throw new Error(`Pull failed: ${err.message}`);
+      throw new Error(`Pull ${tableName} failed: ${err.message}`);
     }
+  }
+
+  async pullFromCouchDB(remoteBase) {
+    const tables = ['students', 'equipment', 'loans'];
+    let totalPulled = 0;
+    let totalBytes = 0;
+
+    for (const table of tables) {
+      const result = await this.pullTableFromCouchDB(table, `${remoteBase}_${table}`);
+      totalPulled += result.pulled;
+      totalBytes += result.bytesReceived;
+    }
+
+    return { pulled: totalPulled, bytesReceived: totalBytes };
   }
 
   async cleanup() {
@@ -332,63 +528,51 @@ class SQLiteBenchmark {
 
 class PouchDBBenchmark {
   constructor() {
-    this.db = null;
+    this.studentsDB = null;
+    this.equipmentDB = null;
+    this.loansDB = null;
   }
 
   async initialize() {
-    const dbPath = path.join(os.tmpdir(), `pouchdb_benchmark_${Date.now()}`);
-    this.db = new PouchDB(dbPath);
+    const base = path.join(os.tmpdir(), `pouchdb_benchmark_${Date.now()}`);
+    this.studentsDB = new PouchDB(path.join(base, 'students'));
+    this.equipmentDB = new PouchDB(path.join(base, 'equipment'));
+    this.loansDB = new PouchDB(path.join(base, 'loans'));
   }
 
-  async insertDocuments(docs) {
-    const result = await this.db.bulkDocs(docs);
-    return result;
+  async insertStudents(students) {
+    return this.studentsDB.bulkDocs(students);
   }
 
-  async getDocument(id) {
-    try {
-      return await this.db.get(id);
-    } catch (err) {
-      if (err.status === 404) return null;
-      throw err;
-    }
+  async insertEquipment(equipment) {
+    return this.equipmentDB.bulkDocs(equipment);
   }
 
-  async getAllDocuments() {
-    const result = await this.db.allDocs({ include_docs: true });
+  async insertLoans(loans) {
+    return this.loansDB.bulkDocs(loans);
+  }
+
+  async getAllStudents() {
+    const result = await this.studentsDB.allDocs({ include_docs: true });
     return result.rows.map(row => row.doc);
   }
 
-  async getUnsyncedDocuments() {
-    const result = await this.db.allDocs({ include_docs: true });
-    return result.rows
-      .map(row => row.doc)
-      .filter(doc => !doc._id.startsWith('_design/') && doc.synced === false);
+  async getAllEquipment() {
+    const result = await this.equipmentDB.allDocs({ include_docs: true });
+    return result.rows.map(row => row.doc);
   }
 
-  async markSynced(id) {
-    try {
-      const doc = await this.db.get(id);
-      await this.db.put({ ...doc, synced: true });
-    } catch (err) {
-      if (err.status !== 404) throw err;
-    }
+  async getAllLoans() {
+    const result = await this.loansDB.allDocs({ include_docs: true });
+    return result.rows.map(row => row.doc);
   }
 
-  async markAllSynced() {
-    const docs = await this.getAllDocuments();
-    const unsynced = docs.filter(d => d.synced === false);
-    for (const doc of unsynced) {
-      await this.db.put({ ...doc, synced: true });
-    }
-  }
-
-  async pushToCouchDB(remoteURL) {
+  async pushCollectionToCouchDB(localDB, remoteURL) {
     const remoteDB = new PouchDB(remoteURL);
 
     return new Promise((resolve, reject) => {
       let bytesSent = 0;
-      const syncHandler = this.db
+      const syncHandler = localDB
         .sync(remoteDB)
         .on('change', (info) => {
           if (info.direction === 'push') {
@@ -407,18 +591,31 @@ class PouchDBBenchmark {
     });
   }
 
-  async pullFromCouchDB(remoteURL) {
+  async pushToCouchDB(remoteBase) {
+    const collections = [
+      { db: this.studentsDB, name: 'students' },
+      { db: this.equipmentDB, name: 'equipment' },
+      { db: this.loansDB, name: 'loans' }
+    ];
+
+    let totalPushed = 0;
+    let totalBytes = 0;
+
+    for (const { db, name } of collections) {
+      const result = await this.pushCollectionToCouchDB(db, `${remoteBase}_${name}`);
+      totalPushed += result.pushed;
+      totalBytes += result.bytesSent;
+    }
+
+    return { pushed: totalPushed, bytesSent: totalBytes };
+  }
+
+  async pullCollectionFromCouchDB(localDB, remoteURL) {
     const remoteDB = new PouchDB(remoteURL);
 
     return new Promise((resolve, reject) => {
       let bytesReceived = 0;
-      // this.db.sync(remoteDB) — sync from the local DB's perspective,
-      // so info.direction === 'pull' means data came FROM remoteDB INTO
-      // this.db (which is what the function name says: pull FROM CouchDB).
-      // The previous code had remoteDB.sync(this.db) which inverted the
-      // semantics — info.pull would have counted docs pushed local→remote
-      // instead of pulled remote→local.
-      const syncHandler = this.db
+      const syncHandler = localDB
         .sync(remoteDB)
         .on('change', (info) => {
           if (info.direction === 'pull') {
@@ -428,7 +625,7 @@ class PouchDBBenchmark {
         .on('complete', (info) => {
           resolve({
             pulled: info.pull?.docs_written || 0,
-            bytesReceived: bytesReceived * 500 // Estimate ~500 bytes per doc
+            bytesReceived: bytesReceived * 500
           });
         })
         .on('error', (err) => {
@@ -437,31 +634,71 @@ class PouchDBBenchmark {
     });
   }
 
+  async pullFromCouchDB(remoteBase) {
+    const collections = [
+      { db: this.studentsDB, name: 'students' },
+      { db: this.equipmentDB, name: 'equipment' },
+      { db: this.loansDB, name: 'loans' }
+    ];
+
+    let totalPulled = 0;
+    let totalBytes = 0;
+
+    for (const { db, name } of collections) {
+      const result = await this.pullCollectionFromCouchDB(db, `${remoteBase}_${name}`);
+      totalPulled += result.pulled;
+      totalBytes += result.bytesReceived;
+    }
+
+    return { pulled: totalPulled, bytesReceived: totalBytes };
+  }
+
   async cleanup() {
-    await this.db.destroy();
+    await this.studentsDB.destroy();
+    await this.equipmentDB.destroy();
+    await this.loansDB.destroy();
   }
 
   /**
-   * One-shot pull from a remote into a fresh, empty local PouchDB.
+   * One-shot pull from a remote into fresh, empty local PouchDB instances.
    * Used by the "initial pull" benchmark scenario — simulates a new
    * device joining the sync for the first time, with the remote
    * already containing the documents.
    */
-  async initialPullFromCouchDB(remoteURL) {
-    const remoteDB = new PouchDB(remoteURL);
-    return new Promise((resolve, reject) => {
-      const syncHandler = this.db
-        .sync(remoteDB)
+  async initialPullFromCouchDB(remoteBase) {
+    const remoteStudents = new PouchDB(`${remoteBase}_students`);
+    const remoteEquipment = new PouchDB(`${remoteBase}_equipment`);
+    const remoteLoans = new PouchDB(`${remoteBase}_loans`);
+
+    const pullOne = (local, remote) => new Promise((resolve, reject) => {
+      let bytesReceived = 0;
+      local.sync(remote)
+        .on('change', (info) => {
+          if (info.direction === 'pull') {
+            bytesReceived += info.change?.docs?.length || 0;
+          }
+        })
         .on('complete', (info) => {
           resolve({
             pulled: info.pull?.docs_written || 0,
             pushed: info.push?.docs_written || 0,
+            bytesReceived: bytesReceived * 500
           });
         })
-        .on('error', (err) => {
-          reject(err);
-        });
+        .on('error', reject);
     });
+
+    const [sResult, eResult, lResult] = await Promise.all([
+      pullOne(this.studentsDB, remoteStudents),
+      pullOne(this.equipmentDB, remoteEquipment),
+      pullOne(this.loansDB, remoteLoans)
+    ]);
+
+    return {
+      pulled: sResult.pulled + eResult.pulled + lResult.pulled,
+      pushed: sResult.pushed + eResult.pushed + lResult.pushed,
+      bytesReceived: sResult.bytesReceived + eResult.bytesReceived + lResult.bytesReceived
+    };
   }
 }
 
@@ -487,47 +724,60 @@ class BenchmarkRunner {
   async runSQLiteBenchmark() {
     log('━━━ SQLite Benchmark ━━━', 'header');
     const sqlite = new SQLiteBenchmark();
+    forceGC();
     const memBefore = getMemoryUsage();
 
     try {
-      // Initialize
       log('Initializing SQLite database...');
       await sqlite.initialize();
-      await sqlite.createTable();
+      await sqlite.createTables();
+
+      // Generate campus equipment loan data
+      const students = generateStudents(TEST_DOC_COUNT);
+      const equipment = generateEquipment(TEST_DOC_COUNT);
+      const loans = generateLoans(students, equipment, Math.floor(TEST_DOC_COUNT / 2));
+      const totalDocs = students.length + equipment.length + loans.length;
 
       // Insert documents
-      const testDocs = generateTestDocuments(TEST_DOC_COUNT);
       const insertStart = performance.now();
-      await sqlite.insertDocuments(testDocs);
+      await sqlite.insertStudents(students);
+      await sqlite.insertEquipment(equipment);
+      await sqlite.insertLoans(loans);
       const insertTime = performance.now() - insertStart;
-      log(`Inserted ${TEST_DOC_COUNT} documents in ${formatMs(insertTime)}`, 'success');
+      log(`Inserted ${totalDocs} documents (${students.length} students, ${equipment.length} equipment, ${loans.length} loans) in ${formatMs(insertTime)}`, 'success');
 
       // Read documents
       const readStart = performance.now();
-      const allDocs = await sqlite.getAllDocuments();
+      const [allStudents, allEquipment, allLoans] = await Promise.all([
+        sqlite.getAllStudents(),
+        sqlite.getAllEquipment(),
+        sqlite.getAllLoans()
+      ]);
       const readTime = performance.now() - readStart;
-      log(`Read ${allDocs.length} documents in ${formatMs(readTime)}`, 'success');
+      const readCount = allStudents.length + allEquipment.length + allLoans.length;
+      log(`Read ${readCount} documents in ${formatMs(readTime)}`, 'success');
 
       // Push to CouchDB
-      const remoteURL = `${COUCHDB_URL}/${DB_NAME}_sqlite`;
-      log(`Pushing to CouchDB: ${remoteURL}`);
+      const remoteBase = `${COUCHDB_URL}/${DB_NAME}_sqlite`;
+      log(`Pushing to CouchDB: ${remoteBase}_*`);
       const pushStart = performance.now();
-      const pushResult = await sqlite.pushToCouchDB(remoteURL);
+      const pushResult = await sqlite.pushToCouchDB(remoteBase);
       const pushTime = performance.now() - pushStart;
       log(`Pushed ${pushResult.pushed} documents in ${formatMs(pushTime)}`, 'success');
 
       // Pull from CouchDB
       log('Pulling from CouchDB...');
       const pullStart = performance.now();
-      const pullResult = await sqlite.pullFromCouchDB(remoteURL);
+      const pullResult = await sqlite.pullFromCouchDB(remoteBase);
       const pullTime = performance.now() - pullStart;
       log(`Pulled ${pullResult.pulled} documents in ${formatMs(pullTime)}`, 'success');
 
+      forceGC();
       const memAfter = getMemoryUsage();
 
       this.results.sqlite = {
-        insert: { timeMs: insertTime, docCount: TEST_DOC_COUNT, docsPerSec: TEST_DOC_COUNT / (insertTime / 1000) },
-        read: { timeMs: readTime, docCount: allDocs.length, docsPerSec: allDocs.length / (readTime / 1000) },
+        insert: { timeMs: insertTime, docCount: totalDocs, docsPerSec: totalDocs / (insertTime / 1000) },
+        read: { timeMs: readTime, docCount: readCount, docsPerSec: readCount / (readTime / 1000) },
         push: { timeMs: pushTime, docsWritten: pushResult.pushed, bytesSent: pushResult.bytesSent, docsPerSec: pushResult.pushed / (pushTime / 1000) },
         pull: { timeMs: pullTime, docsRead: pullResult.pulled, bytesReceived: pullResult.bytesReceived, docsPerSec: pullResult.pulled / (pullTime / 1000) },
         memory: {
@@ -550,46 +800,62 @@ class BenchmarkRunner {
   async runPouchDBBenchmark() {
     log('━━━ PouchDB Benchmark ━━━', 'header');
     const pouchdb = new PouchDBBenchmark();
+    forceGC();
     const memBefore = getMemoryUsage();
 
     try {
-      // Initialize
-      log('Initializing PouchDB database...');
+      log('Initializing PouchDB databases...');
       await pouchdb.initialize();
 
+      // Generate campus equipment loan data
+      const students = generateStudents(TEST_DOC_COUNT);
+      const equipment = generateEquipment(TEST_DOC_COUNT);
+      const loans = generateLoans(students, equipment, Math.floor(TEST_DOC_COUNT / 2));
+      const totalDocs = students.length + equipment.length + loans.length;
+
       // Insert documents
-      const testDocs = generateTestDocuments(TEST_DOC_COUNT);
       const insertStart = performance.now();
-      await pouchdb.insertDocuments(testDocs);
+      await pouchdb.insertStudents(students);
+      await pouchdb.insertEquipment(equipment);
+      await pouchdb.insertLoans(loans);
       const insertTime = performance.now() - insertStart;
-      log(`Inserted ${TEST_DOC_COUNT} documents in ${formatMs(insertTime)}`, 'success');
+      log(`Inserted ${totalDocs} documents (${students.length} students, ${equipment.length} equipment, ${loans.length} loans) in ${formatMs(insertTime)}`, 'success');
 
       // Read documents
       const readStart = performance.now();
-      const allDocs = await pouchdb.getAllDocuments();
+      const [allStudents, allEquipment, allLoans] = await Promise.all([
+        pouchdb.getAllStudents(),
+        pouchdb.getAllEquipment(),
+        pouchdb.getAllLoans()
+      ]);
       const readTime = performance.now() - readStart;
-      log(`Read ${allDocs.length} documents in ${formatMs(readTime)}`, 'success');
+      const readCount = allStudents.length + allEquipment.length + allLoans.length;
+      log(`Read ${readCount} documents in ${formatMs(readTime)}`, 'success');
 
       // Push to CouchDB
-      const remoteURL = `${COUCHDB_URL}/${DB_NAME}_pouchdb`;
-      log(`Pushing to CouchDB: ${remoteURL}`);
+      const remoteBase = `${COUCHDB_URL}/${DB_NAME}_pouchdb`;
+      log(`Pushing to CouchDB: ${remoteBase}_*`);
       const pushStart = performance.now();
-      const pushResult = await pouchdb.pushToCouchDB(remoteURL);
+      const pushResult = await pouchdb.pushToCouchDB(remoteBase);
       const pushTime = performance.now() - pushStart;
       log(`Pushed ${pushResult.pushed} documents in ${formatMs(pushTime)}`, 'success');
 
-      // Pull from CouchDB
-      log('Pulling from CouchDB...');
+      // Pull from CouchDB into fresh local PouchDB instances
+      log('Pulling from CouchDB (fresh local DBs)...');
+      const freshPull = new PouchDBBenchmark();
+      await freshPull.initialize();
       const pullStart = performance.now();
-      const pullResult = await pouchdb.pullFromCouchDB(remoteURL);
+      const pullResult = await freshPull.initialPullFromCouchDB(remoteBase);
       const pullTime = performance.now() - pullStart;
       log(`Pulled ${pullResult.pulled} documents in ${formatMs(pullTime)}`, 'success');
+      await freshPull.cleanup();
 
+      forceGC();
       const memAfter = getMemoryUsage();
 
       this.results.pouchdb = {
-        insert: { timeMs: insertTime, docCount: TEST_DOC_COUNT, docsPerSec: TEST_DOC_COUNT / (insertTime / 1000) },
-        read: { timeMs: readTime, docCount: allDocs.length, docsPerSec: allDocs.length / (readTime / 1000) },
+        insert: { timeMs: insertTime, docCount: totalDocs, docsPerSec: totalDocs / (insertTime / 1000) },
+        read: { timeMs: readTime, docCount: readCount, docsPerSec: readCount / (readTime / 1000) },
         push: { timeMs: pushTime, docsWritten: pushResult.pushed, bytesSent: pushResult.bytesSent, docsPerSec: pushResult.pushed / (pushTime / 1000) },
         pull: { timeMs: pullTime, docsRead: pullResult.pulled, bytesReceived: pullResult.bytesReceived, docsPerSec: pullResult.pulled / (pullTime / 1000) },
         memory: {
@@ -610,41 +876,43 @@ class BenchmarkRunner {
   }
 
   /**
-   * "Initial pull" scenario — a fresh, empty PouchDB instance joins
-   * a sync that already has data on the remote. This produces a
-   * NON-ZERO pull count, unlike the regular PouchDB benchmark where
-   * push + pull on the same local DB correctly returns 0.
-   *
-   * Uses the same remote database that the regular PouchDB benchmark
-   * just pushed into, so no additional setup is needed.
+   * "Initial pull" scenario — fresh, empty PouchDB instances join
+   * a sync that already has data on the remote. This measures the
+   * "new device joining" deployment scenario.
    */
   async runInitialPullBenchmark() {
     log('━━━ PouchDB Initial-Pull Benchmark (fresh device joins) ━━━', 'header');
 
     const fresh = new PouchDBBenchmark();
+    forceGC();
     const memBefore = getMemoryUsage();
 
     try {
       await fresh.initialize();
       log('Initializing fresh PouchDB (empty) for initial-pull scenario...');
 
-      const remoteURL = `${COUCHDB_URL}/${DB_NAME}_pouchdb`;
-      log(`Pulling from CouchDB: ${remoteURL}`);
+      const remoteBase = `${COUCHDB_URL}/${DB_NAME}_pouchdb`;
+      log(`Pulling from CouchDB: ${remoteBase}_*`);
 
       const pullStart = performance.now();
-      const pullResult = await fresh.initialPullFromCouchDB(remoteURL);
+      const pullResult = await fresh.initialPullFromCouchDB(remoteBase);
       const pullTime = performance.now() - pullStart;
-      log(`Pulled ${pullResult.pushed === 0 ? pullResult.pulled : '??'} documents in ${formatMs(pullTime)}`, 'success');
+      log(`Pulled ${pullResult.pulled} documents in ${formatMs(pullTime)}`, 'success');
 
-      // Verify the local now has the docs
-      const allDocs = await fresh.getAllDocuments();
+      const [sCount, eCount, lCount] = await Promise.all([
+        fresh.getAllStudents(),
+        fresh.getAllEquipment(),
+        fresh.getAllLoans()
+      ]).then(([s, e, l]) => [s.length, e.length, l.length]);
+
+      forceGC();
       const memAfter = getMemoryUsage();
 
       this.results.initialPull = {
         timeMs: pullTime,
         docsRead: pullResult.pulled,
         docsPushed: pullResult.pushed,
-        finalLocalCount: allDocs.length,
+        finalLocalCount: sCount + eCount + lCount,
         docsPerSec: pullResult.pulled / (pullTime / 1000),
         memory: {
           before: memBefore,
@@ -672,10 +940,53 @@ class BenchmarkRunner {
     }
   }
 
+  async createCouchDBDatabases() {
+    const databases = [
+      `${DB_NAME}_sqlite_students`,
+      `${DB_NAME}_sqlite_equipment`,
+      `${DB_NAME}_sqlite_loans`,
+      `${DB_NAME}_pouchdb_students`,
+      `${DB_NAME}_pouchdb_equipment`,
+      `${DB_NAME}_pouchdb_loans`
+    ];
+
+    for (const dbName of databases) {
+      try {
+        await axios.put(`${COUCHDB_URL}/${dbName}`);
+        log(`Created database: ${dbName}`, 'success');
+      } catch (err) {
+        if (err.response?.status === 412) {
+          log(`Database already exists: ${dbName}`);
+        } else {
+          log(`Failed to create ${dbName}: ${err.message}`, 'error');
+        }
+      }
+    }
+  }
+
+  saveResults() {
+    const docsDir = path.join(__dirname, '..', 'docs');
+    if (!fs.existsSync(docsDir)) {
+      fs.mkdirSync(docsDir, { recursive: true });
+    }
+
+    const filename = `benchmark-${TEST_DOC_COUNT}docs.json`;
+    const filePath = path.join(docsDir, filename);
+
+    // Strip console banner artifacts from JSON_OUTPUT mode
+    const raw = JSON.stringify(this.results, null, 2);
+    fs.writeFileSync(filePath, raw, 'utf8');
+    log(`Results saved to: ${filePath}`, 'success');
+  }
+
   async cleanupTestDatabases() {
     const databases = [
-      `${DB_NAME}_sqlite`,
-      `${DB_NAME}_pouchdb`
+      `${DB_NAME}_sqlite_students`,
+      `${DB_NAME}_sqlite_equipment`,
+      `${DB_NAME}_sqlite_loans`,
+      `${DB_NAME}_pouchdb_students`,
+      `${DB_NAME}_pouchdb_equipment`,
+      `${DB_NAME}_pouchdb_loans`
     ];
 
     for (const dbName of databases) {
@@ -741,10 +1052,10 @@ class BenchmarkRunner {
 
     console.log('\n');
     console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║     SQLite↔CouchDB vs PouchDB↔CouchDB Benchmark Report    ║');
+    console.log('║  Campus Equipment Loan — SQLite vs PouchDB Benchmark Report║');
     console.log('╚══════════════════════════════════════════════════════════════╝');
     console.log(`\n  Timestamp: ${this.results.timestamp}`);
-    console.log(`  Documents: ${TEST_DOC_COUNT}`);
+    console.log(`  Documents per collection: ${TEST_DOC_COUNT} students, ${TEST_DOC_COUNT} equipment, ${Math.floor(TEST_DOC_COUNT / 2)} loans`);
     console.log(`  CouchDB: ${COUCHDB_URL}`);
 
     const s = this.results.sqlite;
@@ -756,8 +1067,8 @@ class BenchmarkRunner {
     console.log('┌─────────────────┬──────────────┬──────────────┬─────────────┐');
     console.log('│ Metric          │ SQLite       │ PouchDB      │ Winner      │');
     console.log('├─────────────────┼──────────────┼──────────────┼─────────────┤');
-    console.log(`│ Insert (${TEST_DOC_COUNT} docs)│ ${formatMs(s.insert.timeMs).padEnd(12)} │ ${formatMs(p.insert.timeMs).padEnd(12)} │ ${c.insert.winner === 'sqlite' ? '✓ SQLite' : '✓ PouchDB'}`);
-    console.log(`│ Read            │ ${formatMs(s.read.timeMs).padEnd(12)} │ ${formatMs(p.read.timeMs).padEnd(12)} │ ${c.read.winner === 'sqlite' ? '✓ SQLite' : '✓ PouchDB'}`);
+    console.log(`│ Insert (all)    │ ${formatMs(s.insert.timeMs).padEnd(12)} │ ${formatMs(p.insert.timeMs).padEnd(12)} │ ${c.insert.winner === 'sqlite' ? '✓ SQLite' : '✓ PouchDB'}`);
+    console.log(`│ Read (all)      │ ${formatMs(s.read.timeMs).padEnd(12)} │ ${formatMs(p.read.timeMs).padEnd(12)} │ ${c.read.winner === 'sqlite' ? '✓ SQLite' : '✓ PouchDB'}`);
     console.log(`│ Push to CouchDB │ ${formatMs(s.push.timeMs).padEnd(12)} │ ${formatMs(p.push.timeMs).padEnd(12)} │ ${c.push.winner === 'sqlite' ? '✓ SQLite' : '✓ PouchDB'}`);
     console.log(`│ Pull from Couch │ ${formatMs(s.pull.timeMs).padEnd(12)} │ ${formatMs(p.pull.timeMs).padEnd(12)} │ ${c.pull.winner === 'sqlite' ? '✓ SQLite' : '✓ PouchDB'}`);
     console.log('└─────────────────┴──────────────┴──────────────┴─────────────┘');
@@ -793,9 +1104,7 @@ class BenchmarkRunner {
     console.log(`│ Schema Tables       │ ${String(c.codeComplexity.schemaTables.sqlite).padStart(12)} │ ${String(c.codeComplexity.schemaTables.pouchdb).padStart(12)} │`);
     console.log('└─────────────────────┴──────────────┴──────────────┘');
 
-    // Initial-pull scenario (separate from the regular push-then-pull workload,
-    // which correctly returns 0 docs for PouchDB because the sync already
-    // knows about the just-pushed docs).
+    // Initial-pull scenario
     const ip = this.results.initialPull;
     if (ip && ip.docsRead !== undefined) {
       console.log('\n━━━ Initial-Pull Scenario (fresh device joins) ━━━\n');
@@ -832,12 +1141,11 @@ class BenchmarkRunner {
 
 async function main() {
   console.log('╔══════════════════════════════════════════════════════════════╗');
-  console.log('║  SQLite↔CouchDB vs PouchDB↔CouchDB Sync Benchmark         ║');
+  console.log('║  Campus Equipment Loan — SQLite vs PouchDB Sync Benchmark  ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
 
   const runner = new BenchmarkRunner();
 
-  // Verify CouchDB connection
   log('Verifying CouchDB connection...');
   const connected = await runner.verifyCouchDB();
   if (!connected) {
@@ -847,23 +1155,18 @@ async function main() {
   }
   log('CouchDB connection verified', 'success');
 
+  log('Creating CouchDB databases...');
+  await runner.createCouchDBDatabases();
+
   try {
-    // Run SQLite benchmark
     await runner.runSQLiteBenchmark();
-
-    // Run PouchDB benchmark
     await runner.runPouchDBBenchmark();
-
-    // Run initial-pull scenario (fresh device joins a populated remote)
     await runner.runInitialPullBenchmark();
 
-    // Generate comparison
     runner.generateComparison();
-
-    // Print report
     runner.printReport();
+    runner.saveResults();
 
-    // Cleanup test databases
     log('\nCleaning up test databases...');
     await runner.cleanupTestDatabases();
     log('Cleanup complete', 'success');
