@@ -81,7 +81,7 @@ async function getAllEquipment() {
   return result.rows
     .map(row => row.doc)
     .filter(doc => !doc._id.startsWith('_design/'))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
 /**

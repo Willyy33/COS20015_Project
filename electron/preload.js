@@ -49,13 +49,4 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // ── Platform info (useful for conditional UI) ─────────────────────────
   platform: process.platform,   // 'win32' | 'darwin' | 'linux'
-
-  // ── Benchmark & Evaluation ──────────────────────────────────────────────
-  benchmark: {
-    run: () => ipcRenderer.invoke("benchmark:run"),
-    getComparison: () => ipcRenderer.invoke("benchmark:getComparison"),
-    getMemory: () => ipcRenderer.invoke("benchmark:getMemory"),
-    getDatabaseSizes: () => ipcRenderer.invoke("benchmark:getDatabaseSizes"),
-    getComplexity: () => ipcRenderer.invoke("benchmark:getComplexity"),
-  },
 });

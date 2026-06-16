@@ -40,9 +40,9 @@ export function useLoans() {
         const equipResult = await window.electronAPI.db.equipment.getAll();
         if (equipResult.success) {
           const formattedEquip = equipResult.data.map(e => ({
-            id: e.equipmentID,
-            name: e.name,
-            category: e.category,
+            id: e.equipmentID || e._id,
+            name: e.name || 'Unknown',
+            category: e.category || 'Other',
             available: !!e.available,
             icon: getCategoryIcon(e.category)
           }));

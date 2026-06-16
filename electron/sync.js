@@ -6,7 +6,7 @@
 const { studentsDB, equipmentDB, loansDB, detectConflicts } = require('./db');
 
 // CouchDB configuration (env-driven for marker reproducibility)
-const COUCHDB_URL = process.env.COUCHDB_URL || 'http://localhost:5984/campus_equipment_loan2';
+const COUCHDB_URL = process.env.COUCHDB_URL || 'http://192:168.0.12:5984/campus_equipment_loan2';
 
 // Track sync state
 let activeSyncHandlers = [];

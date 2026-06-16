@@ -3,7 +3,7 @@ import EquipmentCard from "./EquipmentCard";
 
 const getCategories = (equipment) => [
   "All",
-  ...Array.from(new Set(equipment.map((e) => e.category))),
+  ...Array.from(new Set(equipment.map((e) => e.category).filter(Boolean))),
 ];
 
 /**
@@ -35,8 +35,8 @@ export default function EquipmentGrid({
     () =>
       equipment.filter((e) => {
         const matchSearch =
-          e.name.toLowerCase().includes(search.toLowerCase()) ||
-          e.id.toLowerCase().includes(search.toLowerCase());
+          (e.name || '').toLowerCase().includes(search.toLowerCase()) ||
+          (e.id || '').toLowerCase().includes(search.toLowerCase());
         const matchCat =
           filterCategory === "All" || e.category === filterCategory;
         const matchStatus =
